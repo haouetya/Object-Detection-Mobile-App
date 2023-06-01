@@ -11,7 +11,6 @@ namespace ObjectDetection
     public class ModelInterpreter
     {
         private readonly string modelPath;
-        private readonly List<string> labels;
         private readonly float threshold;
 
         private readonly Interpreter interpreter;
@@ -20,19 +19,16 @@ namespace ObjectDetection
         private readonly int outputClassCount;
         private readonly int outputBoxSize;
 
-        public ModelInterpreter(string modelPath, List<string> labels, float threshold = 0.5f)
+        public ModelInterpreter(string modelPath, float threshold = 0.5f)
         {
             this.modelPath = modelPath;
-            this.labels = labels;
             this.threshold = threshold;
 
             interpreter = new Interpreter(modelPath);
-            var inputShape = interpreter.GetInputTensorShape(0);
-            inputImageSize = inputShape[1];
-            var outputShape = interpreter.GetOutputTensorShape(0);
-            outputBoxCount = outputShape[1];
-            outputClassCount = outputShape[2];
-            outputBoxSize = outputShape[3];
+            inputImageSize = 300;
+            outputBoxCount = 0; // Update with the correct index of the "locations" output tensor
+            outputClassCount = 0; // Update with the correct index of the "classes" output tensor
+            outputBoxSize = 0; // Update with the correct index of the "scores" output tensor
         }
 
         public async Task<List<DetectionResult>> DetectAsync(byte[] imageBytes)
@@ -44,9 +40,9 @@ namespace ObjectDetection
             var inputs = new List<object> { image };
             var outputs = new Dictionary<int, object>
             {
-                { 0, outputLocations },
-                { 1, outputClasses },
-                { 2, outputScores }
+                { outputBoxCount, outputLocations },
+                { outputClassCount, outputClasses },
+                { outputBoxSize, outputScores }
             };
             interpreter.RunForMultipleInputsOutputs(inputs, outputs);
 
