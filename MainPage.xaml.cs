@@ -68,5 +68,11 @@ namespace ObjectDetection
                 BoxView.Color = Color.Transparent;
             }
         }
+
+        float threshold = 0.5f; // Specify the threshold value
+
+        List<ModelInterpreter.DetectionResult> filteredResults = results
+            .Where(result => result.Score >= threshold)
+            .ToList();
     }
 }
