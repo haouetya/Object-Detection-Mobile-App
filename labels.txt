@@ -1,7 +1,0 @@
-Bed
-Cat
-Chair
-Dog
-Laptop
-Person
-Phone
