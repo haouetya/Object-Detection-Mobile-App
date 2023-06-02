@@ -8,7 +8,6 @@ using Xamarin.Forms;
 using Xamarin.Forms.Platform.Android;
 using Xamarin.Forms.Platform.Android.FastRenderers;
 using Object_Detection_App.Droid;
-using Object_Detection_App;
 
 [assembly: ExportRenderer(typeof(Object_Detection_App.CameraPreview), typeof(CameraPreviewRenderer))]
 namespace Object_Detection_App.Droid
@@ -50,7 +49,7 @@ namespace Object_Detection_App.Droid
         }
 
         void OnElementChanged(ElementChangedEventArgs<CameraPreview> e)
-        {
+        {   
             CameraFragment newFragment = null;
 
             if (e.OldElement != null)

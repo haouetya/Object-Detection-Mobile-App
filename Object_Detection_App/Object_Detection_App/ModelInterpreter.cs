@@ -2,145 +2,86 @@
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
-using Xamarin.Forms.PlatformConfiguration;
 
 namespace Object_Detection_App
 {
-    public class TensorflowObjectDetector : IObjectDetector
+    public class ModelInterpreter
     {
-        const int FloatSize = 4;
-        const int PixelSize = FloatSize * 3;
+        private readonly string modelPath;
+        private readonly float threshold;
 
-        private float[][] _OutputBoxes;
-        public Java.Lang.Object OutputBoxes
+        private readonly Interpreter interpreter;
+        private readonly int inputImageSize;
+        private readonly int outputBoxCount;
+        private readonly int outputClassCount;
+        private readonly int outputBoxSize;
+
+        public ModelInterpreter(string modelPath, float threshold = 0.5f)
         {
-            get => Java.Lang.Object.FromArray(_OutputBoxes);
-            set => _OutputBoxes = value.ToArray<float[]>();
+            this.modelPath = modelPath;
+            this.threshold = threshold;
+
+            interpreter = new Interpreter(modelPath);
+            inputImageSize = 300;
+            outputBoxCount = 0; 
+            outputClassCount = 0; 
+            outputBoxSize = 0; 
         }
 
-        private float[] _OutputScores;
-        public Java.Lang.Object OutputScores
+        public async Task<List<DetectionResult>> DetectAsync(byte[] imageBytes)
         {
-            get => Java.Lang.Object.FromArray(_OutputScores);
-            set => _OutputScores = value.ToArray<float>();
-        }
-
-        private long[] _OutputClasses;
-        public Java.Lang.Object OutputClasses
-        {
-            get => Java.Lang.Object.FromArray(_OutputClasses);
-            set => _OutputClasses = value.ToArray<long>();
-        }
-
-        public Interpreter Interpreter { get; }
-
-        public TensorflowObjectDetector()
-        {
-            var mappedByteBuffer = GetModelAsMappedByteBuffer();
-            Interpreter = new Interpreter(mappedByteBuffer);
-        }
-
-        public ImagePrediction Detect(byte[] image)
-        {
-            var tensor = Interpreter.GetInputTensor(0);
-            var shape = tensor.Shape();
-
-            var width = shape[1];
-            var height = shape[2];
-
-            using var imageByteBuffer = GetPhotoAsByteBuffer(image, width, height);
-
-            var numDetections = Interpreter.GetOutputTensor(0).NumElements();
-
-            _OutputBoxes = CreateJaggedArray<float>(numDetections, 4);
-            _OutputScores = new float[numDetections];
-            _OutputClasses = new long[numDetections];
-
-            Java.Lang.Object[] inputArray = { imageByteBuffer };
-
-            var outputMap = new Dictionary<Java.Lang.Integer, Java.Lang.Object>();
-            outputMap.Add(new Java.Lang.Integer(0), OutputBoxes);
-            outputMap.Add(new Java.Lang.Integer(1), OutputScores);
-            outputMap.Add(new Java.Lang.Integer(2), OutputClasses);
-
-            Interpreter.RunForMultipleInputsOutputs(inputArray, outputMap);
-
-            var imagePrediction = new ImagePrediction(predictions: new List<PredictionModel>());
-
-            for (var i = 0; i < _OutputScores.Length; i++)
+            var image = ImageUtils.DecodeJpeg(imageBytes, inputImageSize, inputImageSize);
+            var outputLocations = new float[1, outputBoxCount, outputBoxSize];
+            var outputClasses = new float[1, outputBoxCount, outputClassCount];
+            var outputScores = new float[1, outputBoxCount];
+            var inputs = new List<object> { image };
+            var outputs = new Dictionary<int, object>
             {
-                var probability = _OutputScores[i];
-                var label = _OutputClasses[i].ToString();
-                imagePrediction.Predictions.Add(new PredictionModel(probability, label));
+                { outputBoxCount, outputLocations },
+                { outputClassCount, outputClasses },
+                { outputBoxSize, outputScores }
+            };
+            interpreter.RunForMultipleInputsOutputs(inputs, outputs);
+
+            var results = new List<DetectionResult>();
+            for (var i = 0; i < outputBoxCount; i++)
+            {
+                var classId = outputClasses[0, i, 0];
+                var score = outputScores[0, i];
+                if (score < threshold) continue;
+
+                var label = labels[(int)classId];
+                var box = outputLocations[0, i, new[] { 1, 0, 3, 2 }]; 
+
+                var x1 = box[0];
+                var y1 = box[1];
+                var x2 = box[2];
+                var y2 = box[3];
+
+                results.Add(new DetectionResult(label, score, x1, y1, x2, y2));
             }
 
-            return imagePrediction;
+            return results;
         }
 
-        private MappedByteBuffer GetModelAsMappedByteBuffer()
+        public class DetectionResult
         {
-            var assetDescriptor = Android.App.Application.Context.Assets.OpenFd("model.tflite");
+            public string Label { get; }
+            public float Score { get; }
+            public float X1 { get; }
+            public float Y1 { get; }
+            public float X2 { get; }
+            public float Y2 { get; }
 
-            using var inputStream = new FileInputStream(assetDescriptor.FileDescriptor);
-
-            var mappedByteBuffer = inputStream.Channel.Map(
-                FileChannel.MapMode.ReadOnly,
-                assetDescriptor.StartOffset,
-                assetDescriptor.DeclaredLength
-            );
-
-            return mappedByteBuffer;
-        }
-
-        private ByteBuffer GetPhotoAsByteBuffer(byte[] image, int width, int height)
-        {
-            var bitmap = BitmapFactory.DecodeByteArray(image, 0, image.Length);
-            var resizedBitmap = Bitmap.CreateScaledBitmap(bitmap, width, height, true);
-
-            var modelInputSize = height * width * PixelSize;
-            var byteBuffer = ByteBuffer.AllocateDirect(modelInputSize);
-            byteBuffer.Order(ByteOrder.NativeOrder());
-
-            var pixels = new int[width * height];
-            resizedBitmap.GetPixels(
-                pixels,
-                0,
-                resizedBitmap.Width,
-                0,
-                0,
-                resizedBitmap.Width,
-                resizedBitmap.Height
-            );
-
-            var pixel = 0;
-
-            for (var i = 0; i < width; i++)
+            public DetectionResult(string label, float score, float x1, float y1, float x2, float y2)
             {
-                for (var j = 0; j < height; j++)
-                {
-                    var pixelVal = pixels[pixel++];
-
-                    byteBuffer.PutFloat(pixelVal >> 16 & 0xFF);
-                    byteBuffer.PutFloat(pixelVal >> 8 & 0xFF);
-                    byteBuffer.PutFloat(pixelVal & 0xFF);
-                }
+                Label = label;
+                Score = score;
+                X1 = x1;
+                Y1 = y1;
+                X2 = x2;
+                Y2 = y2;
             }
-
-            bitmap.Recycle();
-
-            return byteBuffer;
-        }
-
-        private static T[][] CreateJaggedArray<T>(int lay1, int lay2)
-        {
-            var arr = new T[lay1][];
-
-            for (int i = 0; i < lay1; i++)
-            {
-                arr[i] = new T[lay2];
-            }
-
-            return arr;
         }
     }
 }

@@ -6,7 +6,7 @@ using Foundation;
 using Object_Detection_App;
 using UIKit;
 
-namespace CustomRenderer.iOS
+namespace Object_Detection_App.iOS
 {
     public class UICameraPreview : UIView
     {
